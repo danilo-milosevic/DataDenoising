@@ -5,7 +5,11 @@ from scipy.stats import zscore
 from sklearn.ensemble import IsolationForest
 from sklearn.cluster import DBSCAN
 from sklearn.linear_model import LinearRegression
-
+from sklearn.model_selection import StratifiedKFold
+from sklearn.base import clone
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
 
 def transform_pca(X, y):
     pca = PCA(n_components=5)
@@ -42,12 +46,29 @@ def remove_outliers_db(X, y):
     y_no_outliers = y.drop(y.index[indices])
     return X_no_outliers, y_no_outliers
 
-def bin_attributes(X, y):
+def bin_attributes_mean(X, y):
     bin_counts = 10
     X_binned = X.copy()
+    bin_edges = np.linspace(0, 1, bin_counts + 1)
+    bin_labels = np.linspace(0, 1, bin_counts)
     
     for col in X_binned.columns:
-        X_binned[col] = pd.cut(X_binned[col], bins=np.linspace(0, 1, bin_counts + 1), labels=np.linspace(0, 1, bin_counts), include_lowest=True)
+        bins = pd.cut(X_binned[col], bins=bin_edges, labels=bin_labels, include_lowest=True)
+        bin_map = X_binned.groupby(bins)[col].mean().to_dict()
+        X_binned[col] = bins.map(bin_map)
+    
+    return X_binned, y
+
+def bin_attributes_median(X, y):
+    bin_counts = 10
+    X_binned = X.copy()
+    bin_edges = np.linspace(0, 1, bin_counts + 1)
+    bin_labels = np.linspace(0, 1, bin_counts)
+    
+    for col in X_binned.columns:
+        bins = pd.cut(X_binned[col], bins=bin_edges, labels=bin_labels, include_lowest=True)
+        bin_map = X_binned.groupby(bins)[col].median().to_dict()
+        X_binned[col] = bins.map(bin_map)
     
     return X_binned, y
 
@@ -73,3 +94,94 @@ def regression_reduce_noise(X, y):
             X_cleaned.loc[valid_rows, col] = predicted_values
     
     return X_cleaned, y
+
+
+def remove_label_noise_ensemble_filter(X, y):
+    n_splits=5
+    voting_threshold=0.5
+
+    classifiers = [RandomForestClassifier(), SVC(probability=True), GradientBoostingClassifier(), KNeighborsClassifier()]
+    
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+    n_instances = len(y)
+    mislabel_counts = np.zeros(n_instances)
+    
+    for classifier in classifiers:
+        misclassified = np.zeros(n_instances)
+        
+        for train_idx, test_idx in skf.split(X, y):
+            model = clone(classifier)
+            model.fit(X[train_idx], y[train_idx])
+            y_pred = model.predict(X[test_idx])
+            misclassified[test_idx] = (y_pred != y[test_idx])
+        
+        mislabel_counts += misclassified
+    
+    noise_instances = mislabel_counts / len(classifiers) > voting_threshold
+    X_filtered = X[~noise_instances]
+    y_filtered = y[~noise_instances]
+    
+    return X_filtered, y_filtered
+
+
+def remove_label_noise_cross_validated_committees_filter(X, y):
+
+    n_splits=5
+    voting_threshold=0.5
+    base_classifier = RandomForestClassifier()
+
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+    n_instances = len(y)
+    
+    classifiers = []
+    for train_idx, test_idx in skf.split(X, y):
+        model = clone(base_classifier)
+        model.fit(X[train_idx], y[train_idx])
+        classifiers.append(model)
+    
+    misclassified = np.zeros(n_instances)
+    for model in classifiers:
+        y_pred = model.predict(X)
+        misclassified += (y_pred != y)
+    
+    noise_instances = misclassified / n_splits > voting_threshold
+    X_filtered = X[~noise_instances]
+    y_filtered = y[~noise_instances]
+    
+    return X_filtered, y_filtered
+
+def remove_label_noise_iterative_partitioning_filter(X, y):
+    X_filtered = X.copy()
+    y_filtered = y.copy()
+
+    max_iterations = 10
+    n_splits=5 
+    voting_threshold=0.5
+    good_data_ratio=0.1
+    base_classifier = RandomForestClassifier()
+    
+    for _ in range(max_iterations):
+        skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+        n_instances = len(y_filtered)
+        classifiers = []
+
+        for train_idx, _ in skf.split(X_filtered, y_filtered):
+            model = clone(base_classifier)
+            model.fit(X_filtered[train_idx], y_filtered[train_idx])
+            classifiers.append(model)
+
+        misclassified = np.zeros(n_instances)
+        for model in classifiers:
+            y_pred = model.predict(X_filtered)
+            misclassified += (y_pred != y_filtered)
+
+        noise_instances = misclassified / n_splits > voting_threshold
+        good_instances = ~noise_instances
+        
+        n_good_samples = int(good_data_ratio * n_instances)
+        good_indices = np.random.choice(np.where(good_instances)[0], n_good_samples, replace=False)
+        
+        X_filtered = np.delete(X_filtered, np.where(noise_instances | np.isin(range(n_instances), good_indices)), axis=0)
+        y_filtered = np.delete(y_filtered, np.where(noise_instances | np.isin(range(n_instances), good_indices)), axis=0)
+
+    return X_filtered, y_filtered
