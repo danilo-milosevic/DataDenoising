@@ -97,69 +97,74 @@ def regression_reduce_noise(X, y):
 
 
 def remove_label_noise_ensemble_filter(X, y):
-    n_splits=5
-    voting_threshold=0.5
+    n_splits = 5
+    voting_threshold = 0.5
 
-    classifiers = [RandomForestClassifier(), SVC(probability=True), GradientBoostingClassifier(), KNeighborsClassifier()]
-    
+    classifiers = [
+        RandomForestClassifier(),
+        SVC(probability=True),
+        GradientBoostingClassifier(),
+        KNeighborsClassifier(),
+    ]
+
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
     n_instances = len(y)
-    mislabel_counts = np.zeros(n_instances)
-    
+    mislabel_counts = np.zeros(n_instances, dtype=int)
+
     for classifier in classifiers:
-        misclassified = np.zeros(n_instances)
-        
+        misclassified = np.zeros(n_instances, dtype=int)
+
         for train_idx, test_idx in skf.split(X, y):
             model = clone(classifier)
-            model.fit(X[train_idx], y[train_idx])
-            y_pred = model.predict(X[test_idx])
-            misclassified[test_idx] = (y_pred != y[test_idx])
-        
+            model.fit(X.iloc[train_idx], y.iloc[train_idx])
+            y_pred = model.predict(X.iloc[test_idx])
+            misclassified[test_idx] = (y_pred != y.iloc[test_idx].values)
+
         mislabel_counts += misclassified
-    
+
     noise_instances = mislabel_counts / len(classifiers) > voting_threshold
-    X_filtered = X[~noise_instances]
-    y_filtered = y[~noise_instances]
-    
+    X_filtered = X.loc[~noise_instances].reset_index(drop=True)
+    y_filtered = y.loc[~noise_instances].reset_index(drop=True)
+
     return X_filtered, y_filtered
 
 
 def remove_label_noise_cross_validated_committees_filter(X, y):
-
-    n_splits=5
-    voting_threshold=0.5
+    n_splits = 5
+    voting_threshold = 0.5
     base_classifier = RandomForestClassifier()
 
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
     n_instances = len(y)
-    
+
     classifiers = []
-    for train_idx, test_idx in skf.split(X, y):
+    for train_idx, _ in skf.split(X, y):
         model = clone(base_classifier)
-        model.fit(X[train_idx], y[train_idx])
+        model.fit(X.iloc[train_idx], y.iloc[train_idx])
         classifiers.append(model)
-    
-    misclassified = np.zeros(n_instances)
+
+    misclassified = np.zeros(n_instances, dtype=int)
     for model in classifiers:
         y_pred = model.predict(X)
-        misclassified += (y_pred != y)
-    
+        misclassified += (y_pred != y.values)
+
     noise_instances = misclassified / n_splits > voting_threshold
-    X_filtered = X[~noise_instances]
-    y_filtered = y[~noise_instances]
-    
+    X_filtered = X.loc[~noise_instances].reset_index(drop=True)
+    y_filtered = y.loc[~noise_instances].reset_index(drop=True)
+
     return X_filtered, y_filtered
+
 
 def remove_label_noise_iterative_partitioning_filter(X, y):
     X_filtered = X.copy()
     y_filtered = y.copy()
 
     max_iterations = 10
-    n_splits=5 
-    voting_threshold=0.5
-    good_data_ratio=0.1
+    n_splits = 5
+    voting_threshold = 0.5
+    good_data_ratio = 0.1
     base_classifier = RandomForestClassifier()
-    
+
     for _ in range(max_iterations):
         skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
         n_instances = len(y_filtered)
@@ -167,21 +172,26 @@ def remove_label_noise_iterative_partitioning_filter(X, y):
 
         for train_idx, _ in skf.split(X_filtered, y_filtered):
             model = clone(base_classifier)
-            model.fit(X_filtered[train_idx], y_filtered[train_idx])
+            model.fit(X_filtered.iloc[train_idx], y_filtered.iloc[train_idx])
             classifiers.append(model)
 
-        misclassified = np.zeros(n_instances)
+        misclassified = np.zeros(n_instances, dtype=int)
         for model in classifiers:
             y_pred = model.predict(X_filtered)
-            misclassified += (y_pred != y_filtered)
+            misclassified += (y_pred != y_filtered.values)
 
         noise_instances = misclassified / n_splits > voting_threshold
         good_instances = ~noise_instances
-        
-        n_good_samples = int(good_data_ratio * n_instances)
+
+        if np.sum(good_instances) == 0:
+            break  # Prevent empty dataset
+
+        n_good_samples = min(int(good_data_ratio * n_instances), np.sum(good_instances))
         good_indices = np.random.choice(np.where(good_instances)[0], n_good_samples, replace=False)
-        
-        X_filtered = np.delete(X_filtered, np.where(noise_instances | np.isin(range(n_instances), good_indices)), axis=0)
-        y_filtered = np.delete(y_filtered, np.where(noise_instances | np.isin(range(n_instances), good_indices)), axis=0)
+
+        keep_instances = ~(noise_instances | np.isin(np.arange(n_instances), good_indices))
+
+        X_filtered = X_filtered.iloc[keep_instances].reset_index(drop=True)
+        y_filtered = y_filtered.iloc[keep_instances].reset_index(drop=True)
 
     return X_filtered, y_filtered

@@ -7,6 +7,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from helper.noise import add_attribute_noise, add_class_noise
 from helper.plot import plot_wrong_predictions
+from copy import deepcopy
 
 def get_onehot(class_count, class_ind):
     rez = np.zeros(class_count)
@@ -38,13 +39,13 @@ def train_models_with_attribute_noise(X, y, models, noise_schedule=[0, 0.1, 0.2,
     iso = Isomap(n_components=dim_red, n_jobs=4)
 
     fig, axes = plt.subplots(len(models), len(noise_schedule), figsize=(10*len(models), 10 * len(noise_schedule)), dpi = 200)
-
+    trained_models = []
     for i, model_data in enumerate(models):
 
         result = []
         accuracy_loss = [0]
-        model, is_one_hot = model_data
-
+        model, model_name = model_data
+        single_trained_model = []
         for j, noise_level in enumerate(noise_schedule):
             
             print(f"\tAdding attribute noise, {noise_level*100}% ...")
@@ -63,7 +64,8 @@ def train_models_with_attribute_noise(X, y, models, noise_schedule=[0, 0.1, 0.2,
                 X_lower = pd.DataFrame(X_lower, index=X_n.index, columns=["component_1", "component_2"])
 
             print(f"\tTraining model {model} with 5 folds...")
-            trained_model, acc = train_model_k_fold(model, 5, X_n, y_n, is_one_hot)
+            trained_model, acc = train_model_k_fold(model, 5, X_n, y_n, False)
+            single_trained_model.append(deepcopy(trained_model))
             print(f"\t{model} finished training...")
             print("-"*20)
             
@@ -78,15 +80,16 @@ def train_models_with_attribute_noise(X, y, models, noise_schedule=[0, 0.1, 0.2,
                 ax = axes[j]
 
             plot_wrong_predictions(trained_model, X_n, y_n, ax, X_lower)
-            ax.set_title(f"{model.__class__.__name__} - Noise {noise_level}")
+            ax.set_title(f"{model_name} - Noise {noise_level}")
             ax.set_xlabel("Component 1")
             ax.set_ylabel("Component 2")
 
-        results.append((model.__class__.__name__, result))
-        accuracy_losses.append((model.__class__.__name__,accuracy_loss))
+        trained_models.append(single_trained_model)
+        results.append((model_name, result))
+        accuracy_losses.append((model_name, accuracy_loss))
 
     plt.show()
-    return results, accuracy_losses
+    return results, accuracy_losses, trained_models
 
 def plot_model_performance_heatmap(performance_data, title, noise_levels=[0, 0.1, 0.2, 0.3, 0.4, 0.5, 1.0], cmap='inferno'):
     model_performance = {}
@@ -113,13 +116,13 @@ def train_models_with_class_noise(X, y, models, noise_schedule=[0, 0.1, 0.2, 0.4
     iso = Isomap(n_components=dim_red)
 
     fig, axes = plt.subplots(len(models), len(noise_schedule), figsize=(10*len(models), 10 * len(noise_schedule)), dpi = 200)
-
+    trained_models = []
     for i, model_data in enumerate(models):
 
         result = []
         accuracy_loss = [0]
-        model, is_one_hot = model_data
-
+        model, model_name = model_data
+        single_trained_model = []
         for j, noise_level in enumerate(noise_schedule):
             
             print(f"\tAdding label noise, {noise_level*100}% ...")
@@ -138,7 +141,8 @@ def train_models_with_class_noise(X, y, models, noise_schedule=[0, 0.1, 0.2, 0.4
                 X_lower = pd.DataFrame(X_lower, index=X_n.index, columns=["component_1", "component_2"])
 
             print(f"\tTraining model {model} with 5 folds...")
-            trained_model, acc = train_model_k_fold(model, 5, X_n, y_n, is_one_hot)
+            trained_model, acc = train_model_k_fold(model, 5, X_n, y_n, False)
+            single_trained_model.append(deepcopy(trained_model))
             print(f"\t{model} finished training...")
             print("-"*20)
             
@@ -157,11 +161,12 @@ def train_models_with_class_noise(X, y, models, noise_schedule=[0, 0.1, 0.2, 0.4
             ax.set_xlabel("Component 1")
             ax.set_ylabel("Component 2")
 
-        results.append((model.__class__.__name__, result))
-        accuracy_losses.append((model.__class__.__name__,accuracy_loss))
+        trained_models.append(single_trained_model)
+        results.append((model_name, result))
+        accuracy_losses.append((model_name,accuracy_loss))
 
     plt.show()
-    return results, accuracy_losses
+    return results, accuracy_losses, trained_models
 
 def get_model_title(transforms):
     title=""
@@ -172,18 +177,46 @@ def get_model_title(transforms):
 def run_models(X, y, models, accuracies, accuracy_changes, transforms=None, title=""):
     noise_schedule = [0, 0.1, 0.2, 0.3, 0.4, 0.5]
 
-    acc, acc_change = train_models_with_attribute_noise(X, y, models, noise_schedule, transforms=transforms)
+    acc, acc_change, trained_att_noise = train_models_with_attribute_noise(X, y, models, noise_schedule, transforms=transforms)
     accuracies.append((f"Accuracy with attribute noise {title}",acc))
     accuracy_changes.append((f"Accuracy change with attribute noise {title}",acc))
 
     plot_model_performance_heatmap(acc, f"Accuracy with attribute noise, {title}", noise_levels=noise_schedule)
     plot_model_performance_heatmap(acc_change, f"Accuracy change with attribute noise, {title}", noise_levels=noise_schedule)
 
-    acc, acc_change = train_models_with_class_noise(X, y, models, noise_schedule, transforms=transforms)
+    acc, acc_change, trained_class_noise = train_models_with_class_noise(X, y, models, noise_schedule, transforms=transforms)
     accuracies.append((f"Accuracy with label noise {title}",acc))
     accuracy_changes.append((f"Accuracy change with label noise {title}",acc))
 
     plot_model_performance_heatmap(acc, f"Accuracy with label noise, {title}", noise_levels=noise_schedule)
     plot_model_performance_heatmap(acc_change, f"Accuracy change with label noise, {title}", noise_levels=noise_schedule)
 
-    return acc, acc_change
+    return acc, acc_change, trained_att_noise, trained_class_noise
+
+def test_models(X, y, models, noise_type="attribute"):
+    #for each model
+    #   run it on X and measure accuracy
+    noise_schedule = [0, 0.1, 0.2, 0.3, 0.4, 0.5]
+    for i, model in enumerate(models):
+        y_pred = model.predict(X)  # Predict
+        acc = accuracy_score(y, y_pred)  # Evaluate
+        print(f"Accuracy for model {model} trained with {noise_schedule[i]*100}% of {noise_type} noise: {acc}")
+
+def difficulty_split(X_train, y_train, X_valid, y_valid, models, difficulty_categories=3):
+    wrong_prediction_count = np.zeros(len(y_valid))
+
+    for model in models:
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_valid)
+        wrong_prediction_count += (y_pred != y_valid).astype(int)
+
+
+    bins = np.linspace(0, len(models), num=difficulty_categories-1)
+    difficulty_labels = np.digitize(wrong_prediction_count, bins, right=False)
+
+    # Map difficulty labels to indices
+    difficulty_indices = {i: np.where(difficulty_labels == i)[0] for i in np.unique(difficulty_labels)}
+
+    return wrong_prediction_count, difficulty_indices
+
+

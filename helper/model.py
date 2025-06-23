@@ -3,20 +3,25 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
+from sklearn.base import BaseEstimator, ClassifierMixin
 
-class MLP(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, l2_reg=0.0):
+class MLP(nn.Module, BaseEstimator, ClassifierMixin):
+    def __init__(self, input_size, hidden_size, output_size, l2_reg=0.0, use_logits = False):
         super(MLP, self).__init__()
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.output_size= output_size
+        self.l2_reg = l2_reg
         self.model = nn.Sequential(
             nn.Linear(input_size, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, hidden_size),
             nn.ReLU(),
-            nn.Linear(hidden_size, output_size),
-            nn.Softmax(dim=1)
+            nn.Linear(hidden_size, output_size), 
         )
-        self.l2_reg = l2_reg
-    
+        if not use_logits:
+            self.model.append(nn.Softmax(dim=1))
+
     def forward(self, x):
         return self.model(x)
     
@@ -46,3 +51,17 @@ class MLP(nn.Module):
             outputs = self.forward(X_tensor)
             predicted_labels = torch.argmax(outputs, dim=1)  # Convert logits to class index
         return predicted_labels.numpy()
+
+    def get_params(self, deep=True):
+        return {
+            "input_size": self.input_size,
+            "hidden_size": self.hidden_size,
+            "output_size": self.output_size,
+            "l2_reg": self.l2_reg,
+        }
+    
+    def set_params(self, **params):
+        for param, value in params.items():
+            setattr(self, param, value)
+        self.model = MLP(self.input_size, self.hidden_size, self.output_size, self.l2_reg)
+        return self
