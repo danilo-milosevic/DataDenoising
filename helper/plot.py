@@ -3,21 +3,46 @@ import matplotlib.pyplot as plt
 import seaborn as sns 
 import numpy as np
 from sklearn.manifold import Isomap
+import math
 
-def plot_attributes(df: pd.DataFrame):
-    fig, axes = plt.subplots(4, 4, figsize=(8, 10))
-    fig.suptitle("Histograms of Attributes", fontsize=10)
+def plot_attributes(
+    df: pd.DataFrame,
+    label_column: str,
+    is_onehot: bool = False,
+    figsize: tuple[int, int] = (8, 10),
+    n_attrs: int = 7,
+):
+    """
+    df - dataframe to plot
+    label_column - name of the column with class labels
+    is_onehot - true if class labels are onehot
+    figsize - size of the plot, 8x10 by default
+    n_attrs - number of attributes
+
+    """
+    column_count = len(df.columns)
+    if is_onehot:
+        column_count -= 1
+    n_rows = int(math.sqrt(column_count))
+    n_columns = column_count // n_rows
+    if n_rows * n_columns < column_count:
+        n_columns += 1
+
+    fig, axes = plt.subplots(n_rows, n_columns, figsize=figsize)
 
     axes = axes.flatten()
 
-    for i, col in enumerate(df.columns):  
-        if 'OneHot' in col:
+    for i, col in enumerate(df.columns):
+        if col == label_column and is_onehot:
             continue
-        sns.histplot(df[col], bins= 7 if col == 'Class_Label' else 10, kde=True, ax=axes[i])
-        axes[i].set_title(f'{col}')
+        sns.histplot(
+            df[col], bins=n_attrs if col == label_column else 10, kde=True, ax=axes[i]
+        )
+        axes[i].set_title(f"{col}")
 
-    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    plt.tight_layout(rect=[0, 0, 1.1, 1.1])
     plt.show()
+
 
 def plot_attr_label(df, y):
     fig, axes = plt.subplots(4, 4, figsize=(8, 8))
