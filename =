@@ -1,0 +1,8 @@
+Requirement already satisfied: ipykernel in ./.venv/lib/python3.13/site-packages (7.1.0)
+Requirement already satisfied: kagglehub in ./.venv/lib/python3.13/site-packages (0.3.13)
+Requirement already satisfied: openpyxl in ./.venv/lib/python3.13/site-packages (3.1.5)
+Requirement already satisfied: imbalanced-learn in ./.venv/lib/python3.13/site-packages (0.14.0)
+Requirement already satisfied: seaborn in ./.venv/lib/python3.13/site-packages (0.13.2)
+Requirement already satisfied: torch in ./.venv/lib/python3.13/site-packages (2.9.1)
+Requirement already satisfied: plotly in ./.venv/lib/python3.13/site-packages (6.5.0)
+Requirement already satisfied: nbformat in ./.venv/lib/python3.13/site-packages (5.10.4)
